@@ -4,31 +4,41 @@
 <img width="320" height="320" alt="intercept" src="https://github.com/user-attachments/assets/b744a41b-5db2-48c7-b072-039de6439e3e" />
 </p>
 
-# Usage
-Set up libnetfilter queues to queue packets to the interceptor in userspace, we use bypass to allow packets to pass through when the interceptor is not running, we need two queues, one for input and one for OUTPUT so that we can determine the direction of the packet:
+# About
 
+This is a simple SIP packet interceptor written in Rust with the intention of being used for testing & debugging SIP network stacks.
+
+The main functionality of interceptor is to modify SIP headers based on user defined rulesets, providing
+a quick and powerful way to manipulate voip traffic without the need to craft fully custom scenarios i.e. sipp
+
+## Usage
+
+This application relies on iptables / nfqueues to send packets to the interceptor in userspace.
+
+We use a bypass flag on iptables to allow packets to pass through when the interceptor is not running.
+
+In order to correctly operate we need two queues, one for INPUT and one for OUTPUT so that we can determine the direction of the packet:
+
+#### Queue setup
 ```
 sudo iptables -I INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
 sudo iptables -I OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass
 ```
 
-Run the interceptor:
+#### Program usage
 
 ```
-./intercept -q <queue-num>-r <ruleset>
+./intercept -i <input-queue-num> -o <output-queue-num> -r <ruleset>
 ```
 
 
-Cleanup:
+#### Cleanup
 
 ```
 sudo iptables -D INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
 sudo iptables -D OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass
 ```
 
-## About
-
-This is a simple SIP packet proxy / interceptor written in Rust. The main purpose is to sit inbetween two parties and modify SIP packets based on a ruleset.
 
 ## Dependencies
 - libnetfilter_queue
