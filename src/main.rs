@@ -5,16 +5,16 @@ pub mod rules;
 use clap::{Arg, Command};
 
 use error::BackendError;
-use net::listen;
+use net::intercept;
 use rules::Rule;
 
 fn usage() {
     println!(
         "Usage: intercept -i <interface> -p <port> -r <ruleset>\n\n\
         Options:\n  \
-        -i, --interface    Specify the network interface\n  \
-        -p, --port         Specify the port to bind\n  \
-        -r, --ruleset      Path to the ruleset JSON file"
+        -i, --input    Input Queue Id\n \
+        -o, --output   Output Queue Id\n \
+        -r, --ruleset  Path to the ruleset JSON file\n"
     );
 }
 
@@ -25,20 +25,20 @@ fn main() -> Result<(), BackendError> {
         .version("1.0")
         .about("SIP packet interceptor for header manipulation")
         .arg(
-            Arg::new("interface")
+            Arg::new("input")
                 .short('i')
-                .long("interface")
+                .long("input")
                 .required(true)
-                .help("Specify the network interface")
-                .value_name("INTERFACE"),
+                .help("Input Queue Id")
+                .value_name("INPUT"),
         )
         .arg(
-            Arg::new("port")
-                .short('p')
-                .long("port")
+            Arg::new("output")
+                .short('o')
+                .long("output")
                 .required(true)
-                .help("Specify the port to bind")
-                .value_name("PORT"),
+                .help("Output Queue Id")
+                .value_name("OUTPUT"),
         )
         .arg(
             Arg::new("ruleset")
@@ -50,10 +50,12 @@ fn main() -> Result<(), BackendError> {
         )
         .get_matches();
 
-    let interface = matches
-        .get_one::<String>("interface")
-        .expect("interface is required");
-    let port = matches.get_one::<String>("port").expect("port is required");
+    let input = matches
+        .get_one::<String>("input")
+        .expect("input queue id is required");
+    let output = matches
+        .get_one::<String>("output")
+        .expect("output queue id is required");
     let ruleset = matches
         .get_one::<String>("ruleset")
         .expect("ruleset is required");
@@ -69,14 +71,16 @@ fn main() -> Result<(), BackendError> {
 
     println!("{}", art);
     println!(
-        "iface: {}   ==   port: {}   ==   ruleset: {}",
-        interface, port, ruleset
+        "in queue: {}   ==   out queue: {}   ==   ruleset: {}",
+        input, output, ruleset
     );
 
-    let port = port.parse::<u16>()?;
+    let input_queue_num = input.parse::<u16>()?;
+    let output_queue_num = output.parse::<u16>()?;
     let ruleset = std::fs::read_to_string(ruleset)?;
     let rules: Vec<Rule> = serde_json::from_str(&ruleset)?;
-    listen(interface, port, &rules);
+
+    intercept(input_queue_num, output_queue_num, rules)?;
 
     Ok(())
 }

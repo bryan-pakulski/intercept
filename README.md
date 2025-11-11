@@ -5,7 +5,26 @@
 <h2 align="center">SIP packet interceptor for header manipulation, written in rust</h2>
 
 # Usage
-`./intercept -i <interface> -p <port> -r <ruleset>`
+Set up libnetfilter queues to queue packets to the interceptor in userspace, we use bypass to allow packets to pass through when the interceptor is not running, we need two queues, one for input and one for OUTPUT so that we can determine the direction of the packet:
+
+`sudo iptables -I INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass`
+`sudo iptables -I OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass`
+
+Run the interceptor:
+
+`./intercept -q <queue-num>-r <ruleset>`
+
+
+Cleanup:
+`sudo iptables -D INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass`
+`sudo iptables -D OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass`
+
+## About
+
+This is a simple SIP packet proxy / interceptor written in Rust. The main purpose is to sit inbetween two parties and modify SIP packets based on a ruleset.
+
+## Dependencies
+- libnetfilter_queue
 
 ## Rules
 
@@ -36,10 +55,10 @@ Formatting is as follows:
 
 ## Examples
 
-Example rulesets can be found in the examples folder.
+Example rulesets can be found in the `examples/` folder.
 
 ## Debugging
 
-Verbone logging can be enabled by setting the `RUST_LOG` environment variable to `debug` or calling directly with:
+Verbose logging can be enabled by setting the `RUST_LOG` environment variable to `debug` or calling directly with:
 
-`RUST_LOG=debug ./intercept -i <interface> -p <port> -r <ruleset>`
+`RUST_LOG=debug ./intercept -q <queue-num> -r <ruleset>`

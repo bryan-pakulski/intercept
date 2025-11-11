@@ -1,126 +1,137 @@
-extern crate pnet;
+use crate::error::{BackendError, BackendErrorKind};
+use crate::rules::{Rule, Direction, When};
 
-use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::{self, NetworkInterface};
-use pnet::packet::ethernet::{EtherTypes, EthernetPacket, MutableEthernetPacket};
-use pnet::packet::ip::IpNextHeaderProtocols;
+use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::Packet;
-use pnet::transport::{self, TransportChannelType, TransportProtocol};
+use std::net::IpAddr;
 
-use crate::rules::{Direction, Rule};
+use std::sync::{Arc, RwLock};
 use log::{debug, info, warn};
+use nfqueue::Message;
+use regex::Regex;
 
-pub fn listen(interface: &str, port: u16, ruleset: &Vec<Rule>) {
-    // Find the network interface
-    let interfaces = datalink::interfaces();
-    let interface = interfaces
-        .into_iter()
-        .find(|iface: &NetworkInterface| iface.name == interface)
-        .expect("Could not find the specified interface");
+#[derive(Clone)]
+struct State {
+    count: u32,
+    ruleset: Arc<RwLock<Vec<Rule>>>,
+}
 
-    // Collect local IP addresses
-    let local_ips: Vec<_> = interface
-        .ips
-        .iter()
-        .filter(|ip| ip.is_ipv4())
-        .map(|ip| ip.ip())
-        .collect();
+pub fn intercept(
+    input_queue_num: u16,
+    output_queue_num: u16,
+    ruleset: Vec<Rule>,
+) -> Result<(), BackendError> {
+    let state = State { count: 0, ruleset: Arc::new(RwLock::new(ruleset)) };
 
-    // Create a channel for reading packets
-    let mut rx = match datalink::channel(&interface, Default::default()) {
-        Ok(Ethernet(_, rx)) => rx,
-        Ok(_) => panic!("Unhandled channel type"),
-        Err(e) => panic!(
-            "An error occurred when creating the datalink channel: {}",
-            e
-        ),
-    };
+    let state_clone = state.clone();
+    let input_thread = std::thread::spawn(move || {
+        let mut input_q = nfqueue::Queue::new(state_clone);
 
-    // Create a channel for sending modified packets
-    let (mut tx, _) = transport::transport_channel(
-        4096,
-        TransportChannelType::Layer3(IpNextHeaderProtocols::Udp),
-    )
-    .expect("Error creating transport channel");
+        input_q.open();
+        input_q.unbind(libc::AF_INET);
+        let rc = input_q.bind(libc::AF_INET);
+        assert!(rc == 0, "Failed to bind to input queue");
+        input_q.create_queue(input_queue_num, input_callback);
+        input_q.set_mode(nfqueue::CopyMode::CopyPacket, 0xffff);
+        input_q.run_loop();
+    });
+    
+    let state_clone = state.clone();
+    let output_thread = std::thread::spawn(move || {
+        let mut output_q = nfqueue::Queue::new(state_clone);
+        output_q.open();
+        output_q.unbind(libc::AF_INET);
+        let rc = output_q.bind(libc::AF_INET);
+        assert!(rc == 0, "Failed to bind to output queue");
+        output_q.create_queue(output_queue_num, output_callback);
+        output_q.set_mode(nfqueue::CopyMode::CopyPacket, 0xffff);
 
-    // One line iterator
-    for ip in local_ips.iter() {
-        println!("IP address: {}", ip);
-    }
-    println!("Listening on port {} {}", port, interface.name);
+        output_q.run_loop();
+    });
 
-    loop {
-        match rx.next() {
-            Ok(packet) => {
-                if let Some(ethernet_packet) = EthernetPacket::new(packet) {
-                    if ethernet_packet.get_ethertype() == EtherTypes::Ipv4 {
-                        if let Some(ipv4_packet) = Ipv4Packet::new(ethernet_packet.payload()) {
-                            if ipv4_packet.get_next_level_protocol() == IpNextHeaderProtocols::Udp {
-                                if let Some(udp_packet) = UdpPacket::new(ipv4_packet.payload()) {
-                                    if udp_packet.get_destination() == port {
-                                        debug!(
-                                            "UDP packet received: {}:{} => {}:{}",
-                                            ipv4_packet.get_source(),
-                                            udp_packet.get_source(),
-                                            ipv4_packet.get_destination(),
-                                            udp_packet.get_destination()
-                                        );
-                                        let payload = udp_packet.payload();
-                                        if is_sip_packet(payload) {
-                                            println!(
-                                                "SIP packet received from: {}:{} => {}:{}",
-                                                ipv4_packet.get_source(),
-                                                udp_packet.get_source(),
-                                                ipv4_packet.get_destination(),
-                                                udp_packet.get_destination()
-                                            );
+    input_thread.join().unwrap();
+    output_thread.join().unwrap();
 
-                                            let direction = if local_ips
-                                                .contains(&ipv4_packet.get_source().into())
-                                            {
-                                                Direction::Out
-                                            } else if local_ips
-                                                .contains(&ipv4_packet.get_destination().into())
-                                            {
-                                                Direction::In
-                                            } else {
-                                                debug!(
-                                                    "Unable to determine direction, skipping..."
-                                                );
-                                                println!("Unable to determine direction, skipping packet...");
-                                                continue;
-                                            };
+    Ok(())
+}
 
-                                            apply_rules_to_sip_packet(payload);
+fn input_callback(msg: &Message, state: &mut State) {
+    debug!("Packet received [id: 0x{:x}]\n", msg.get_id());
+    state.count += 1;
 
-                                            let mut mod_packet =
-                                                MutableEthernetPacket::owned(packet.to_vec())
-                                                    .unwrap();
+    if let Some(header) = Ipv4Packet::new(msg.get_payload()) {
+        match header.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                if let Some(payload) = UdpPacket::new(header.payload()) {
+                    if is_sip_packet(payload.payload()) {
+                        let source = IpAddr::V4(header.get_source());
+                        let destination = IpAddr::V4(header.get_destination());
 
-                                            modify_packet(&mut mod_packet);
-
-                                            tx.send_to(
-                                                mod_packet,
-                                                std::net::IpAddr::V4(ipv4_packet.get_destination()),
-                                            )
-                                            .expect("Failed to send packet");
-                                        }
-                                    }
-                                }
+                        if let Ok(uri) = get_uri(payload.payload()) {
+                            println!("INBOUND => {} => {} | {}", source, destination, uri);
+                            if let Ok(modified_packet) =
+                                apply_rules_to_sip_packet(payload.payload(), state.ruleset.clone(), Direction::In)
+                            {
+                                // Send modified packet
                             }
                         }
                     }
                 }
             }
-            Err(e) => println!("Error reading...: {}", e),
+            _ => {
+                debug!(
+                    "Received packet with protocol: {:?}",
+                    header.get_next_level_protocol()
+                );
+            }
         }
+    } else {
+        debug!("Non IPv4 packet received");
     }
+
+    msg.set_verdict(nfqueue::Verdict::Accept);
 }
 
+fn output_callback(msg: &Message, state: &mut State) {
+    debug!("Packet sent [id: 0x{:x}]\n", msg.get_id());
+    state.count += 1;
+
+    if let Some(header) = Ipv4Packet::new(msg.get_payload()) {
+        match header.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                if let Some(payload) = UdpPacket::new(header.payload()) {
+                    if is_sip_packet(payload.payload()) {
+                        let source = IpAddr::V4(header.get_source());
+                        let destination = IpAddr::V4(header.get_destination());
+
+                        if let Ok(uri) = get_uri(payload.payload()) {
+                            println!("OUTBOUND => {} => {} | {}", source, destination, uri);
+                            if let Ok(modified_packet) =
+                                apply_rules_to_sip_packet(payload.payload(), state.ruleset.clone(), Direction::Out)
+                            {
+                                // Send modified packet
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {
+                debug!(
+                    "Received packet with protocol: {:?}",
+                    header.get_next_level_protocol()
+                );
+            }
+        }
+    } else {
+        debug!("Non IPv4 packet received");
+    }
+
+    msg.set_verdict(nfqueue::Verdict::Accept);
+}
+// A very naive check, we are relying on SIP/2.0 to be present on the first line
 fn is_sip_packet(payload: &[u8]) -> bool {
-    // A very naive check
     if let Ok(payload_str) = std::str::from_utf8(payload) {
         if payload_str.contains("SIP/2.0") {
             return true;
@@ -129,16 +140,73 @@ fn is_sip_packet(payload: &[u8]) -> bool {
     false
 }
 
-// Placeholder for your implementation of applying rules
-fn apply_rules_to_sip_packet(payload: &[u8]) {
-    println!(
-        "Processing SIP packet: {:?}",
-        String::from_utf8_lossy(payload)
-    );
-    // Insert your rule processing code here
+fn get_uri(payload: &[u8]) -> Result<String, BackendError> {
+    if let Ok(payload_str) = std::str::from_utf8(payload) {
+        if let Some(first_line) = payload_str.lines().next() {
+            return Ok(first_line.to_string());
+        }
+    }
+
+    Err(BackendError::new(
+        BackendErrorKind::General,
+        "Failed to get URI from SIP packet".to_string(),
+    ))
 }
 
-// Implement your packet modification logic
-fn modify_packet(packet: &mut MutableEthernetPacket) {
-    // Add your logic to modify the packet here
+fn regex_match(regex: &str, payload: &[u8]) -> bool {
+    if let Ok(payload_str) = std::str::from_utf8(payload) {
+        if let Ok(regex) = Regex::new(regex) {
+            if regex.is_match(payload_str) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn apply_rules_to_sip_packet(
+    payload: &[u8],
+    ruleset: Arc<RwLock<Vec<Rule>>>,
+    direction: Direction,
+) -> Result<Vec<u8>, BackendError> {
+    let uri = get_uri(payload)?;
+
+    for rule in ruleset.read().unwrap().iter() {
+
+        // URI match
+        debug!("Checking rule \"{}\" in uri: \"{}\"", rule.uri, uri);
+        if !uri.contains(&rule.uri) {
+            debug!("URI did not match rule \"{}\"", rule.uri);
+            continue;
+        }
+        debug!("URI matched rule \"{}\"", rule.uri);
+        
+        // Direction match
+        if rule.direction != direction && rule.direction != Direction::Both {
+            debug!("Direction \"{}\" did not match rule \"{}\"", direction, rule.direction);
+            continue;
+        }
+        debug!("Direction \"{}\" matched rule \"{}\"", direction, rule.direction);
+        
+        // Match regex
+        if let Some(regex) = &rule.match_regex {
+            debug!("Checking rule \"{}\" in regex \"{}\"", rule.match_regex.as_ref().unwrap(), regex);
+            if !regex_match(regex, payload) {
+                continue;
+            }
+            debug!("Regex matched rule \"{}\"", rule.match_regex.as_ref().unwrap());
+        }
+
+        // Trigger match
+        match rule.when {
+            When::Always => {
+                debug!("Trigger matched rule \"always\"");
+            },
+            When::Once => {
+                debug!("Trigger matched rule \"once\"");
+            }
+        }
+    }
+
+    Ok(vec![])
 }

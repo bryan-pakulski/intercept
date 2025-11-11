@@ -1,12 +1,22 @@
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Direction {
     In,
     Out,
     Both,
+}
+
+impl std::fmt::Display for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Direction::In => write!(f, "in"),
+            Direction::Out => write!(f, "out"),
+            Direction::Both => write!(f, "both"),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -34,16 +44,16 @@ pub enum Action {
 
 #[derive(Deserialize, Debug)]
 pub struct Rule {
-    uri: String,
-    direction: Direction,
-    when: When,
+    pub uri: String,
+    pub direction: Direction,
+    pub when: When,
     #[serde(default)]
-    match_regex: Option<String>,
-    actions: Vec<Action>,
+    pub match_regex: Option<String>,
+    pub actions: Vec<Action>,
 
     // Not included in the JSON, internal state, incremented on each trigger
     #[serde(skip)]
-    trigger_count: usize,
+    pub trigger_count: usize,
 }
 
 // Tests

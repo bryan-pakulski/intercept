@@ -73,3 +73,12 @@ impl From<std::io::Error> for BackendError {
         }
     }
 }
+
+impl From<std::str::Utf8Error> for BackendError {
+    fn from(err: std::str::Utf8Error) -> Self {
+        Self {
+            kind: BackendErrorKind::General,
+            message: err.to_string(),
+        }
+    }
+}
