@@ -5,7 +5,7 @@
 <h2 align="center">SIP packet interceptor for header manipulation, written in rust</h2>
 
 # Usage
-./intercept -i <interface> -p <port> -r <ruleset>
+`./intercept -i <interface> -p <port> -r <ruleset>`
 
 ## Rules
 
