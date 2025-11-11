@@ -1,23 +1,30 @@
+<h2 align="center">SIP packet interceptor for header manipulation, written in rust</h2>
+
 <p align="center">
 <img width="320" height="320" alt="intercept" src="https://github.com/user-attachments/assets/b744a41b-5db2-48c7-b072-039de6439e3e" />
 </p>
 
-<h2 align="center">SIP packet interceptor for header manipulation, written in rust</h2>
-
 # Usage
 Set up libnetfilter queues to queue packets to the interceptor in userspace, we use bypass to allow packets to pass through when the interceptor is not running, we need two queues, one for input and one for OUTPUT so that we can determine the direction of the packet:
 
-`sudo iptables -I INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass`
-`sudo iptables -I OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass`
+```
+sudo iptables -I INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
+sudo iptables -I OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass
+```
 
 Run the interceptor:
 
-`./intercept -q <queue-num>-r <ruleset>`
+```
+./intercept -q <queue-num>-r <ruleset>
+```
 
 
 Cleanup:
-`sudo iptables -D INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass`
-`sudo iptables -D OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass`
+
+```
+sudo iptables -D INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
+sudo iptables -D OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass
+```
 
 ## About
 
@@ -57,7 +64,15 @@ Formatting is as follows:
 
 Example rulesets can be found in the `examples/` folder.
 
-## Debugging
+## Development
+
+A makefile is provided for convenience to build and run the interceptor. for testing simple rulesets you can use `nc` to send packets locally, i.e.:
+
+```
+echo "INVITE sip:99990243214321@10.10.10.123 SIP/2.0" | nc -u -w1 127.0.0.1 5060
+```
+
+## Debug logging
 
 Verbose logging can be enabled by setting the `RUST_LOG` environment variable to `debug` or calling directly with:
 
