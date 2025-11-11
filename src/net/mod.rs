@@ -46,9 +46,9 @@ pub fn listen(interface: &str, port: u16, ruleset: &Vec<Rule>) {
     .expect("Error creating transport channel");
 
     // One line iterator
-    local_ips.for_each(|ip| {
+    for ip in local_ips.iter() {
         println!("IP address: {}", ip);
-    });
+    }
     println!("Listening on port {} {}", port, interface.name);
 
     loop {
@@ -77,18 +77,21 @@ pub fn listen(interface: &str, port: u16, ruleset: &Vec<Rule>) {
                                                 udp_packet.get_destination()
                                             );
 
-                                            let direction = if local_ips.contains(&ipv4_packet.get_source())
+                                            let direction = if local_ips
+                                                .contains(&ipv4_packet.get_source().into())
                                             {
                                                 Direction::Out
-                                            }
-                                            else if local_ips.contains(&ipv4_packet.get_destination())
+                                            } else if local_ips
+                                                .contains(&ipv4_packet.get_destination().into())
                                             {
                                                 Direction::In
                                             } else {
-                                                debug!("Unable to determine direction, skipping...");
+                                                debug!(
+                                                    "Unable to determine direction, skipping..."
+                                                );
                                                 println!("Unable to determine direction, skipping packet...");
                                                 continue;
-                                            }
+                                            };
 
                                             apply_rules_to_sip_packet(payload);
 
@@ -119,7 +122,9 @@ pub fn listen(interface: &str, port: u16, ruleset: &Vec<Rule>) {
 fn is_sip_packet(payload: &[u8]) -> bool {
     // A very naive check
     if let Ok(payload_str) = std::str::from_utf8(payload) {
-        payload_str.contains("SIP/2.0")
+        if payload_str.contains("SIP/2.0") {
+            return true;
+        }
     }
     false
 }
