@@ -1,0 +1,17 @@
+[
+    {
+        "uri": "INVITE",
+        "direction": "out",
+        "when": "once",
+        "match": "",
+        "actions": [
+            {
+                "type": "add",
+                "key_value": {
+                    "Diversion": "0412341234",
+                    "History-Info": "0412341234"
+                }
+            }
+        ]
+    }
+]
