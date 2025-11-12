@@ -21,8 +21,8 @@ In order to correctly operate we need two queues, one for INPUT and one for OUTP
 
 #### Queue setup
 ```
-sudo iptables -I INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
-sudo iptables -I OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass
+sudo iptables -t mangle -I INPUT -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
+sudo iptables -t mangle -I OUTPUT -p udp --dport 5060 -j NFQUEUE --queue-num 1 --queue-bypass
 ```
 
 #### Program usage

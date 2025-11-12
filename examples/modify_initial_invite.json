@@ -2,7 +2,7 @@
     {
         "uri": "INVITE",
         "direction": "out",
-        "when": "once",
+        "when": "always",
         "match": "",
         "actions": [
             {
@@ -10,6 +10,20 @@
                 "key_value": {
                     "Diversion": "0412341234",
                     "History-Info": "0412341234"
+                }
+            }
+        ]
+    },
+    {
+        "uri": "INVITE",
+        "direction": "in",
+        "when": "always",
+        "match": "",
+        "actions": [
+            {
+                "type": "add",
+                "key_value": {
+                    "Diversion": "1234567789"
                 }
             }
         ]

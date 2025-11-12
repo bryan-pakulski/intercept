@@ -4,22 +4,19 @@ pub mod rules;
 
 use clap::{Arg, Command};
 
+use log::{info, LevelFilter};
 use error::BackendError;
 use net::intercept;
 use rules::Rule;
 
-fn usage() {
-    println!(
-        "Usage: intercept -i <interface> -p <port> -r <ruleset>\n\n\
-        Options:\n  \
-        -i, --input    Input Queue Id\n \
-        -o, --output   Output Queue Id\n \
-        -r, --ruleset  Path to the ruleset JSON file\n"
-    );
-}
-
 fn main() -> Result<(), BackendError> {
-    env_logger::init();
+    // Unless overriden by RUST_LOG, set the default log level to info
+    if let Ok(log_level) = std::env::var("RUST_LOG") {
+        env_logger::builder().parse_filters(&log_level).init();
+
+    } else {
+        env_logger::builder().filter_level(LevelFilter::Info).init();
+    }
 
     let matches = Command::new("intercept")
         .version("1.0")
@@ -69,8 +66,8 @@ fn main() -> Result<(), BackendError> {
     ╚═╝ ╚═╝  ╚═══╝    ╚═╝    ╚══════╝ ╚═╝  ╚═╝  ╚═════╝ ╚══════╝ ╚═╝         ╚═╝
     "#;
 
-    println!("{}", art);
-    println!(
+    info!("{}", art);
+    info!(
         "in queue: {}   ==   out queue: {}   ==   ruleset: {}",
         input, output, ruleset
     );
