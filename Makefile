@@ -5,6 +5,9 @@ setup:
 build:
 	cargo build
 
+release:
+	cargo build --release
+
 run: build
 	sudo RUST_BACKTRACE=1 RUST_LOG=trace ./target/debug/intercept -i 0 -o 1 -r examples/modify_initial_invite.json
 

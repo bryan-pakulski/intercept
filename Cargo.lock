@@ -131,7 +131,6 @@ dependencies = [
  "env_logger",
  "libc",
  "log",
- "nfqueue",
  "pnet",
  "regex",
  "serde",
@@ -201,15 +200,6 @@ name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
-
-[[package]]
-name = "nfqueue"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8684696e66ae4f74e6b2fe8868bf317bc4cd0e0e53aabddf7c40dad930111bca"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "no-std-net"

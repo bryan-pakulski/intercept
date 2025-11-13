@@ -3,12 +3,19 @@ name = "intercept"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "nfqueue_rs"
+path = "nfqueue-rs/src/lib.rs"
+
+[[bin]]
+name = "intercept"
+path = "src/main.rs"
+
 [dependencies]
 clap = "4.5.51"
 env_logger = "0.11.8"
 libc = "0.2.177"
 log = "0.4.28"
-nfqueue = "0.9.1"
 pnet = "0.35.0"
 regex = "1.12.2"
 serde = {version="1.0.188", features=["derive"]}
