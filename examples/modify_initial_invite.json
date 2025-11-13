@@ -13,19 +13,5 @@
                 }
             }
         ]
-    },
-    {
-        "uri": "INVITE",
-        "direction": "in",
-        "when": "always",
-        "match": "",
-        "actions": [
-            {
-                "type": "add",
-                "key_value": {
-                    "Diversion": "1234567789"
-                }
-            }
-        ]
     }
 ]

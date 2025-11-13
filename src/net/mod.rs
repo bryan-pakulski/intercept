@@ -80,10 +80,10 @@ fn input_callback(msg: &Message, state: &mut State) {
     let mut header = ip_header.unwrap();
     debug!("Got IPv4 Packet: {:?}", header);
 
-    let source = header.to_immutable().get_source();
+    let source = header.get_source();
     let destination = header.get_destination();
 
-    if let Some(udp_packet) = MutableUdpPacket::new(&mut header.packet_mut()) {
+    if let Some(udp_packet) = MutableUdpPacket::new(&mut header.payload_mut()) {
         debug!("Got UDP Packet: {:?}", udp_packet);
 
         if is_sip_packet(udp_packet.payload()) {
@@ -92,7 +92,7 @@ fn input_callback(msg: &Message, state: &mut State) {
                 if let Ok(mut modified_packet) = apply_rules_to_sip_packet(
                     udp_packet.payload(),
                     state.ruleset.clone(),
-                    Direction::Out,
+                    Direction::In,
                 ) {
                     warn!("Not modifying packet, allowing through...");
                 }
@@ -116,7 +116,7 @@ fn output_callback(msg: &Message, state: &mut State) {
 
     if ip_header.is_none() {
         debug!("Non ipv4 packet received");
-        msg.set_verdict(nfqueue::Verdict::Accept);
+        msg.set_verdict(nfqueue::Verdict::Stop);
         return;
     }
     
@@ -126,7 +126,7 @@ fn output_callback(msg: &Message, state: &mut State) {
     let source = header.to_immutable().get_source();
     let destination = header.get_destination();
 
-    if let Some(udp_packet) = MutableUdpPacket::new(&mut header.packet_mut()) {
+    if let Some(udp_packet) = MutableUdpPacket::new(&mut header.payload_mut()) {
         debug!("Got UDP Packet: {:?}", udp_packet);
 
         if is_sip_packet(udp_packet.payload()) {
@@ -143,7 +143,7 @@ fn output_callback(msg: &Message, state: &mut State) {
         }
     }
     
-    msg.set_verdict(nfqueue::Verdict::Accept);
+    msg.set_verdict(nfqueue::Verdict::Stop);
 }
 
 // A very naive check, we are relying on SIP/2.0 to be present on the first line
