@@ -145,32 +145,39 @@ fn output_callback(msg: &Message, state: &mut State) {
         if is_sip_packet(udp_packet.payload()) {
             if let Ok(uri) = get_uri(udp_packet.payload()) {
                 info!("INBOUND => {} => {} | {}", source, destination, uri);
-                if let Ok(modified_packet) = apply_rules_to_sip_packet(
+                if let Ok(mut modified_packet) = apply_rules_to_sip_packet(
                     udp_packet.payload(),
                     state.ruleset.clone(),
                     Direction::Out,
                 ) {
-                    debug!("Modified data size: {}", modified_packet.len());
+                    let payload_size = modified_packet.len();
+                    debug!("Modified data size: {}", payload_size);
+
+                    let mut udp_pkt = MutableUdpPacket::new(&mut modified_packet[..]).unwrap();
+                    udp_pkt.set_source(udp_packet.get_source());
+                    udp_pkt.set_destination(udp_packet.get_destination());
+                    udp_pkt.set_length(payload_size as u16);
+                    udp_pkt.set_checksum(0);
 
                     // allow up to 20 byte header + payload
-                    let mut new_buffer = vec![0x0; 20 + modified_packet.len()];
+                    let mut new_buffer = vec![0x0; 20 + payload_size];
                     new_buffer[..20].copy_from_slice(header.packet()[0..20].as_ref());
                     
                     let mut new_pkt = MutableIpv4Packet::new(&mut new_buffer[..]).unwrap();
 
-
-                    new_pkt.set_total_length(modified_packet.len() as u16 + 20);
-                    new_pkt.set_payload(&modified_packet);
+                    new_pkt.set_total_length(payload_size as u16 + 20);
+                    new_pkt.set_payload(&udp_pkt.packet()[..]);
                     new_pkt.set_checksum(pnet::packet::ipv4::checksum(&new_pkt.to_immutable()));
 
                     debug!("Constructed new IPV4 Packet: {:?}", new_pkt);
+                    debug!("Constructed new UDP Packet: {:?}", udp_pkt);
 
-                    match state.sender.write().unwrap().send_to(new_pkt.to_immutable(), new_pkt.get_source().into()) {
+                    match state.sender.write().unwrap().send_to(new_pkt.to_immutable(), new_pkt.get_destination().into()) {
                         Ok(_) => {
-                            debug!("Sent modified packet to {}", new_pkt.get_source());
+                            debug!("Sent modified packet to {}", new_pkt.get_destination());
                         },
                         Err(e) => {
-                            error!("Failed to send modified packet to {}: {}", new_pkt.get_source(), e);
+                            error!("Failed to send modified packet to {}: {}", new_pkt.get_destination(), e);
                         }
                     }
 
