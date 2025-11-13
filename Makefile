@@ -6,7 +6,7 @@ build:
 	cargo build
 
 run: build
-	sudo RUST_BACKTRACE=1 RUST_LOG=debug ./target/debug/intercept -i 0 -o 1 -r examples/modify_initial_invite.json
+	sudo RUST_BACKTRACE=1 RUST_LOG=trace ./target/debug/intercept -i 0 -o 1 -r examples/modify_initial_invite.json
 
 clean:
 	sudo iptables -D INPUT -t mangle -p udp --dport 5060 -j NFQUEUE --queue-num 0 --queue-bypass
