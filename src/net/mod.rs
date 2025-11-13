@@ -7,7 +7,7 @@ use pnet::packet::udp::{MutableUdpPacket, UdpPacket};
 use pnet::packet::{MutablePacket, Packet, PacketSize};
 use std::net::{IpAddr, Ipv4Addr};
 
-use log::{debug, error, info};
+use log::{debug, warn, info};
 use nfqueue::Message;
 use regex::Regex;
 use std::sync::{Arc, RwLock};
@@ -67,45 +67,39 @@ fn input_callback(msg: &Message, state: &mut State) {
         msg.get_nfmark()
     );
     state.count += 1;
+    
+    let mut data = msg.get_payload().to_owned();
+    let ip_header = MutableIpv4Packet::new(&mut data);
 
-    if let Some(header) = Ipv4Packet::new(msg.get_payload()) {
-        match header.get_next_level_protocol() {
-            IpNextHeaderProtocols::Udp => {
-                if let Some(payload) = UdpPacket::new(header.payload()) {
-                    if is_sip_packet(payload.payload()) {
-                        let source = IpAddr::V4(header.get_source());
-                        let destination = IpAddr::V4(header.get_destination());
+    if ip_header.is_none() {
+        debug!("Non ipv4 packet received");
+        msg.set_verdict(nfqueue::Verdict::Accept);
+        return;
+    }
+    
+    let mut header = ip_header.unwrap();
+    debug!("Got IPv4 Packet: {:?}", header);
 
-                        if let Ok(uri) = get_uri(payload.payload()) {
-                            info!("INBOUND => {} => {} | {}", source, destination, uri);
-                            if let Ok(modified_packet) = apply_rules_to_sip_packet(
-                                payload.payload(),
-                                state.ruleset.clone(),
-                                Direction::In,
-                            ) {
-                                debug!("Sending modified packet");
+    let source = header.to_immutable().get_source();
+    let destination = header.get_destination();
 
-                                msg.set_verdict_full(
-                                    nfqueue::Verdict::Accept,
-                                    msg.get_nfmark(),
-                                    modified_packet.as_slice(),
-                                );
-                                return;
-                            }
-                        }
-                    }
+    if let Some(udp_packet) = MutableUdpPacket::new(&mut header.packet_mut()) {
+        debug!("Got UDP Packet: {:?}", udp_packet);
+
+        if is_sip_packet(udp_packet.payload()) {
+            if let Ok(uri) = get_uri(udp_packet.payload()) {
+                info!("INBOUND => {} => {} | {}", source, destination, uri);
+                if let Ok(mut modified_packet) = apply_rules_to_sip_packet(
+                    udp_packet.payload(),
+                    state.ruleset.clone(),
+                    Direction::Out,
+                ) {
+                    warn!("Not modifying packet, allowing through...");
                 }
             }
-            _ => {
-                debug!(
-                    "Received packet with protocol: {:?}",
-                    header.get_next_level_protocol()
-                );
-            }
         }
-    } else {
-        debug!("Non IPv4 packet received");
     }
+    
     msg.set_verdict(nfqueue::Verdict::Accept);
 }
 
@@ -119,67 +113,37 @@ fn output_callback(msg: &Message, state: &mut State) {
     
     let mut data = msg.get_payload().to_owned();
     let ip_header = MutableIpv4Packet::new(&mut data);
+
+    if ip_header.is_none() {
+        debug!("Non ipv4 packet received");
+        msg.set_verdict(nfqueue::Verdict::Accept);
+        return;
+    }
     
-    if let Some(mut header) = MutableIpv4Packet::new(&mut ip_header.unwrap().payload_mut()) {
-        debug!("Got IPv4 Packet: {:?}", header);
+    let mut header = ip_header.unwrap();
+    debug!("Got IPv4 Packet: {:?}", header);
 
-        let source = header.to_immutable().get_source();
-        let destination = header.get_destination();
+    let source = header.to_immutable().get_source();
+    let destination = header.get_destination();
 
-        if let Some(udp_packet) = MutableUdpPacket::new(&mut header.packet_mut()) {
-            debug!("Got UDP Packet: {:?}", udp_packet);
+    if let Some(udp_packet) = MutableUdpPacket::new(&mut header.packet_mut()) {
+        debug!("Got UDP Packet: {:?}", udp_packet);
 
-            if is_sip_packet(udp_packet.payload()) {
-
-                if let Ok(uri) = get_uri(udp_packet.payload()) {
-                    info!("OUTBOUND => {} => {} | {}", source, destination, uri);
-                    if let Ok(mut modified_packet) = apply_rules_to_sip_packet(
-                        udp_packet.payload(),
-                        state.ruleset.clone(),
-                        Direction::Out,
-                    ) {
-                        let new_size = modified_packet.len();
-
-                        let mut new_pkt = MutableUdpPacket::new(&mut modified_packet[..]).unwrap();
-                        new_pkt.set_source(udp_packet.get_source());
-                        new_pkt.set_destination(udp_packet.get_destination());
-                        new_pkt.set_length(new_size as u16);
-                        new_pkt.set_checksum(pnet::packet::udp::ipv4_checksum(&new_pkt.to_immutable(), &source, &destination));
-                        
-                        let new_len = new_pkt.get_length();
-                        let mut new_data = new_pkt.payload_mut().to_owned();
-                        
-                        debug!("Created UDP packet: {:?}", new_pkt);
-
-                        let mut ip4_pkt = MutableIpv4Packet::new(&mut new_data).unwrap();
-                        ip4_pkt.set_version(header.get_version());
-                        ip4_pkt.set_next_level_protocol(header.get_next_level_protocol());
-                        ip4_pkt.set_total_length(new_len);
-                        ip4_pkt.set_source(source);
-                        ip4_pkt.set_destination(destination);
-                        ip4_pkt.set_options(&vec![]);
-                        ip4_pkt.set_identification(header.get_identification());
-                        ip4_pkt.set_dscp(header.get_dscp());
-                        ip4_pkt.set_checksum(pnet::packet::ipv4::checksum(&ip4_pkt.to_immutable()));
-                        ip4_pkt.set_ttl(header.get_ttl());
-                        ip4_pkt.set_flags(header.get_flags());
-                        ip4_pkt.set_header_length(header.get_header_length());
-                        
-                        debug!("Created ipv4 packet: {} \n {:?}", ip4_pkt.get_total_length(), ip4_pkt);
-
-                        msg.set_verdict_full(
-                            nfqueue::Verdict::Accept,
-                            msg.get_nfmark(),
-                            ip4_pkt.packet_mut(),
-                        );
-                    }
+        if is_sip_packet(udp_packet.payload()) {
+            if let Ok(uri) = get_uri(udp_packet.payload()) {
+                info!("OUTBOUND => {} => {} | {}", source, destination, uri);
+                if let Ok(mut modified_packet) = apply_rules_to_sip_packet(
+                    udp_packet.payload(),
+                    state.ruleset.clone(),
+                    Direction::Out,
+                ) {
+                    warn!("Not modifying packet, allowing through...");
                 }
             }
         }
     }
-
+    
     msg.set_verdict(nfqueue::Verdict::Accept);
-
 }
 
 // A very naive check, we are relying on SIP/2.0 to be present on the first line
