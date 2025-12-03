@@ -119,7 +119,7 @@ fn input_callback(msg: &Message, state: &mut State) {
                         let mut udp_pkt = MutableUdpPacket::new(&mut buf).unwrap();
                         udp_pkt.set_source(udp_packet.get_source());
                         udp_pkt.set_destination(udp_packet.get_destination());
-                        udp_pkt.set_length(payload_size as u16);
+                        udp_pkt.set_length((payload_size + 8) as u16);
                         udp_pkt.set_payload(&modified_packet);
                         udp_pkt.set_checksum(0);
                         debug!("Constructed new udp packet: {:?}", udp_pkt);
@@ -188,7 +188,7 @@ fn output_callback(msg: &Message, state: &mut State) {
                         let mut udp_pkt = MutableUdpPacket::new(&mut buf).unwrap();
                         udp_pkt.set_source(udp_packet.get_source());
                         udp_pkt.set_destination(udp_packet.get_destination());
-                        udp_pkt.set_length(payload_size as u16);
+                        udp_pkt.set_length((payload_size + 8) as u16);
                         udp_pkt.set_payload(&modified_packet);
                         udp_pkt.set_checksum(0);
                         debug!("Constructed new udp packet: {:?}", udp_pkt);
@@ -314,10 +314,12 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
     let final_buffer: String;
 
     if parts.len() == 2 {
-        final_buffer = format!("{}\r\n\r\n{}", new_headers, parts[1]);
+        final_buffer = format!("{}\r\n\r\n{}", new_headers, body_str);
     } else {
         final_buffer = new_headers;
     }
+
+    debug!("New buffer: {} -> {}", payload.len(), final_buffer.len());
 
     Ok(final_buffer)
 }
