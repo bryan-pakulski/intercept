@@ -60,9 +60,20 @@ Formatting is as follows:
     "when": "always|once",        -> Only run once or always modify
     "match": "regex",             -> optional trigger, i.e. only run if a certain IP addr is present, if empty will always run actions
     "actions": [ 
-      {"delete": ["Diversion", "History-Info"]},                                       -> Will delete any header/s present that match this key                                             (supports multiple)
-      {"add": {"Diversion": "1234", "History-Info": "1234"}},                           -> Will add headers with the provided values                                                        (supports multiple)
-      {"mod": {"Diversion": {"match": "regex", replace: "Field to replace with"}}},     -> Will take the requested header and replace matched values with the one provided                  (supports multiple)
+        {
+            "type": "delete",     -> delete any header/s present that match this key (supports multiple)
+            "key": ["Diversion", "History-Info"]
+        },
+        {
+            "type": "add",        -> add headers with the provided values (supports multiple)
+            "key_value": { "Diversion": "1234", "History-Info": "1234" }
+        },
+        {
+            "type": "mod",        -> take the requested header and replace matched values with the one provided (supports multiple)
+            "key": "Diversion",
+            "match_pattern": "regex",
+            "replace": "Field to replace with"
+        }
     ],
   },
   ...

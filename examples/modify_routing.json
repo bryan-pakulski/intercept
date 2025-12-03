@@ -1,0 +1,16 @@
+[
+  {
+    "uri": "200 Ok",
+    "direction": "in",
+    "when": "always",
+    "match": "",
+    "actions": [
+      {
+        "type": "mod",
+        "key": "Record-Route",
+        "match_pattern": "(?i)^Record-Route:\s*(.*)$",
+        "replace": "<sip:10.10.0.1;lr>"
+      }
+    ]
+  }
+]
