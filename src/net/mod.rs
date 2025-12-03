@@ -302,41 +302,40 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
     }
 
     let intermediate_buffer = lines.join("\r\n");
-    let parts: Vec<&str> = intermediate_buffer.split("\r\n\r\n").collect();
-    let mut final_buffer = intermediate_buffer.clone();
+    let parts: Vec<&str> = intermediate_buffer.splitn(2, "\r\n\r\n").collect();
 
     // If we have a body, we must calculate its length and update the header
-    if parts.len() > 1 {
-        let body = parts[1..].join("\r\n\r\n");
+    if parts.len() == 2 {
+        let headers = parts[0];
+        let body = parts[1];
         let new_content_length = body.len();
 
         debug!("Recalculated Content-Length: {}", new_content_length);
 
-        // Replace exisitng header
-        let cl_regex = Regex::new(r"(?i)^Content-Length:\s*\d+").unwrap();
-        let mut headers = parts[0].to_string();
+        let mut header_lines: Vec<String> = headers.split("\r\n").map(String::from).collect();
+        let mut found_cl = false;
 
-        if cl_regex.is_match(&headers) {
-            headers = cl_regex.replace(
-                &headers,
-                format!("Content-Length: {}\r\n", new_content_length).as_str(),
-            ).to_string();
-        } else {
-            headers.push_str(&format!("\r\nContent-Length: {}", new_content_length));
+        for line in header_lines.iter_mut() {
+            if line.to_lowercase().starts_with("content-length:") {
+                debug!("Updating Content-LLength from: [{}] to [{}]", line, new_content_length);
+                *line = format!("Content-Length: {}", new_content_length);
+                found_cl = true;
+                break;
+            }
         }
 
-        // Reconstruct
-        final_buffer = format!("{}\r\n\r\n{}", headers, body);
+        // If missing case
+        if !found_cl {
+            info!("Adding missing Content-Length header");
+            header_lines.push(format!("Content-Length: {}", new_content_length));
+        }
+       
+        let new_headers = header_lines.join("\r\n");
+        let final_buffer = format!("{}\r\n\r\n{}", new_headers, body);
+        return Ok(final_buffer);
     }
 
-    debug!(
-        "New buffer: {} -> {} \n{}",
-        payload.len(),
-        final_buffer.len(),
-        final_buffer
-    );
-
-    Ok(final_buffer)
+    Ok(intermediate_buffer)
 }
 
 fn apply_rules_to_sip_packet(
