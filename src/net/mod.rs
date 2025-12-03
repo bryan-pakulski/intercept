@@ -301,15 +301,42 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
         }
     }
 
-    let new_buffer = lines.join("\n");
+    let intermediate_buffer = lines.join("\r\n");
+    let parts: Vec<&str> = intermediate_buffer.split("\r\n\r\n").collect();
+    let mut final_buffer = intermediate_buffer.clone();
+
+    // If we have a body, we must calculate its length and update the header
+    if parts.len() > 1 {
+        let body = parts[1..].join("\r\n\r\n");
+        let new_content_length = body.len();
+
+        debug!("Recalculated Content-Length: {}", new_content_length);
+
+        // Replace exisitng header
+        let cl_regex = Regex::new(r"(?i)^Content-Length:\s*(\d+)").unwrap();
+        let mut headers = parts[0].to_string();
+
+        if cl_regex.is_match(&headers) {
+            headers = cl_regex.replace(
+                &headers,
+                format!("Content-Length: {}\r\n", new_content_length).as_str(),
+            ).to_string();
+        } else {
+            headers.push_str(format!("Content-Length: {}\r\n", new_content_length).as_str());
+        }
+
+        // Reconstruct
+        final_buffer = format!("{}\r\n\r\n{}", headers, body);
+    }
+
     debug!(
         "New buffer: {} -> {} \n{}",
         payload.len(),
-        new_buffer.len(),
-        new_buffer
+        final_buffer.len(),
+        final_buffer
     );
 
-    Ok(new_buffer)
+    Ok(final_buffer)
 }
 
 fn apply_rules_to_sip_packet(
