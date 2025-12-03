@@ -8,8 +8,8 @@
       {
         "type": "mod",
         "key": "Record-Route",
-        "match_pattern": "(?i)^Record-Route:\s*(.*)$",
-        "replace": "<sip:10.10.0.1;lr>"
+        "match_pattern": "(?i)^Record-Route:\\s*(.*)$",
+        "replace": "Record-Route: <sip:10.10.0.1;lr>"
       }
     ]
   }
