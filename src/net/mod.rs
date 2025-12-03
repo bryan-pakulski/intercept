@@ -250,12 +250,11 @@ fn regex_match(regex: &str, payload: &[u8]) -> bool {
 }
 
 fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, BackendError> {
-    let mut lines: Vec<String> = payload.to_string().lines().map(String::from).collect();
-    
-    let intermediate_buffer = lines.join("\r\n");
-    let parts: Vec<&str> = intermediate_buffer.splitn(2, "\r\n\r\n").collect();
+    let parts: Vec<&str> = payload.splitn(2, "\r\n\r\n").collect();
 
     let headers_str = parts[0];
+    let body_str = if parts.len() > 1 { parts[1] } else { "" };
+
     let mut header_lines: Vec<String> = headers_str.split("\r\n").map(String::from).collect();
 
     for action in actions {
@@ -293,17 +292,21 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
                     key, match_pattern, replace
                 );
                 let re = Regex::new(match_pattern)?;
-                lines = lines
-                    .iter()
-                    .map(|line| {
-                        if line.contains(key) {
-                            re.replace(line, replace.as_str()).to_string()
-                        } else {
-                            line.clone()
-                        }
-                    })
-                    .collect();
+                for header in header_lines.iter_mut() {
+                    if header.contains(key) {
+                        *header = re.replace(header, replace.as_str()).to_string();
+                    }
+                }
             }
+        }
+    }
+
+    let body_len = body_str.len();
+    for header in header_lines.iter_mut() {
+        let lower = header.to_lowercase();
+        if lower.starts_with("content-length:") || lower.starts_with("l:") {
+            *header = format!("Content-Length: {}", body_len);
+            break;
         }
     }
 
