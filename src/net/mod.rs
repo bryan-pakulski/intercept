@@ -313,7 +313,7 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
         debug!("Recalculated Content-Length: {}", new_content_length);
 
         // Replace exisitng header
-        let cl_regex = Regex::new(r"(?i)^Content-Length:\s*(\d+)").unwrap();
+        let cl_regex = Regex::new(r"(?i)^Content-Length:\s*\d+").unwrap();
         let mut headers = parts[0].to_string();
 
         if cl_regex.is_match(&headers) {
@@ -322,7 +322,7 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
                 format!("Content-Length: {}\r\n", new_content_length).as_str(),
             ).to_string();
         } else {
-            headers.push_str(format!("Content-Length: {}\r\n", new_content_length).as_str());
+            headers.push_str(&format!("\r\nContent-Length: {}", new_content_length));
         }
 
         // Reconstruct
