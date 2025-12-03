@@ -251,20 +251,26 @@ fn regex_match(regex: &str, payload: &[u8]) -> bool {
 
 fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, BackendError> {
     let mut lines: Vec<String> = payload.to_string().lines().map(String::from).collect();
+    
+    let intermediate_buffer = lines.join("\r\n");
+    let parts: Vec<&str> = intermediate_buffer.splitn(2, "\r\n\r\n").collect();
+
+    let headers_str = parts[0];
+    let mut header_lines: Vec<String> = headers_str.split("\r\n").map(String::from).collect();
 
     for action in actions {
         match action {
             Action::Delete { key } => {
                 debug!("Deleting headers: {:?}", key);
                 for k in key {
-                    for line in lines.iter() {
-                        if line.contains(k) {
-                            info!("Deleting line: {}", line);
+                    for header in header_lines.iter_mut() {
+                        if header.contains(k) {
+                            info!("Deleting line: {}", header);
                         }
                     }
                 }
                 // Filter out lines that match the keys
-                lines.retain(|line| !key.iter().any(|k| line.contains(k)));
+                header_lines.retain(|header| !key.iter().any(|k| header.contains(k)));
             }
             Action::Add { key_value } => {
                 debug!("Adding headers: {:?}", key_value);
@@ -274,7 +280,7 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
                     info!("Adding header: {}: {}", k, v);
 
                     let new_line = format!("{}: {}", k, v);
-                    lines.insert(1, new_line);
+                    header_lines.insert(1, new_line);
                 }
             }
             Action::Mod {
@@ -301,41 +307,16 @@ fn apply_actions(payload: &str, actions: &Vec<Action>) -> Result<String, Backend
         }
     }
 
-    let intermediate_buffer = lines.join("\r\n");
-    let parts: Vec<&str> = intermediate_buffer.splitn(2, "\r\n\r\n").collect();
+    let new_headers = header_lines.join("\r\n");
+    let final_buffer: String;
 
-    // If we have a body, we must calculate its length and update the header
     if parts.len() == 2 {
-        let headers = parts[0];
-        let body = parts[1];
-        let new_content_length = body.len();
-
-        debug!("Recalculated Content-Length: {}", new_content_length);
-
-        let mut header_lines: Vec<String> = headers.split("\r\n").map(String::from).collect();
-        let mut found_cl = false;
-
-        for line in header_lines.iter_mut() {
-            if line.to_lowercase().starts_with("content-length:") {
-                debug!("Updating Content-LLength from: [{}] to [{}]", line, new_content_length);
-                *line = format!("Content-Length: {}", new_content_length);
-                found_cl = true;
-                break;
-            }
-        }
-
-        // If missing case
-        if !found_cl {
-            info!("Adding missing Content-Length header");
-            header_lines.push(format!("Content-Length: {}", new_content_length));
-        }
-       
-        let new_headers = header_lines.join("\r\n");
-        let final_buffer = format!("{}\r\n\r\n{}", new_headers, body);
-        return Ok(final_buffer);
+        final_buffer = format!("{}\r\n\r\n{}", new_headers, parts[1]);
+    } else {
+        final_buffer = new_headers;
     }
 
-    Ok(intermediate_buffer)
+    Ok(final_buffer)
 }
 
 fn apply_rules_to_sip_packet(
